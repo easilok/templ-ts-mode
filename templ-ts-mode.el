@@ -82,8 +82,7 @@
    :language 'templ
    :feature 'constant
    `([(false) (nil) (true)] @font-lock-constant-face
-     ,@(when (go-ts-mode--iota-query-supported-p)
-         '((iota) @font-lock-constant-face))
+     (iota) @font-lock-constant-face
      (const_declaration
       (const_spec name: (identifier) @font-lock-constant-face)))
 
@@ -97,12 +96,12 @@
       name: (identifier) @font-lock-function-name-face)
      (method_declaration
       name: (field_identifier) @font-lock-function-name-face)
-     (,(if (go-ts-mode--method-elem-supported-p)
-           'method_elem
-         'method_spec)
-      name: (field_identifier) @font-lock-function-name-face)
      (field_declaration
       name: (field_identifier) @font-lock-property-name-face)
+     (method_elem
+      name: (field_identifier) @font-lock-function-name-face)
+     (method_spec
+      name: (field_identifier) @font-lock-function-name-face)
      (parameter_declaration
       name: (identifier) @font-lock-variable-name-face)
      (short_var_declaration
@@ -207,7 +206,9 @@
 (defvar templ-ts--indent-rules
   `(;; Javascript used for script blocks that use the javascript
     ;; sub-parser.
-    ,(car js--treesit-indent-rules)
+    ,(if (fboundp 'js--treesit-indent-rules)
+         (js--treesit-indent-rules)
+       (car js--treesit-indent-rules))
     ;; Templ rules, for the rest of the file.
     (templ
 
@@ -234,16 +235,6 @@
      ;; needs. They need to get evaluated last because they end with a
      ;; no-node rule that would overrule all rules that come after.
      ,@(cdar go-ts-mode--indent-rules))))
-
-(defun templ-ts--treesit-update-ranges (start end)
-  "Update child parser ranges between START and END."
-  (ignore start end)
-  (let ((js-ranges (or (treesit-query-range 'templ '((script_block_text) @js))
-                       '((1 . 1)))))
-    (treesit-parser-set-included-ranges (treesit-parser-create 'javascript) js-ranges)))
-
-(defvar templ-ts--range-rules
-  '(templ-ts--treesit-update-ranges))
 
 (defvar templ-ts--font-lock-feature-list
   '((comment definition)
@@ -306,8 +297,11 @@
               #'templ-ts--treesit-language-at-point)
 
   (setq-local treesit-range-settings
-              (apply #'treesit-range-rules
-                     templ-ts--range-rules))
+              (treesit-range-rules
+               :embed 'javascript
+               :host 'templ
+               :offset '(1 . -1)
+               '((script_element (script_element_text) @javascript))))
 
   ;; Indent.
   (setq-local indent-tabs-mode t
@@ -326,8 +320,10 @@
                                          templ-ts--go-font-lock-rules))
                      (root-compiled (apply #'treesit-font-lock-rules
                                            root-rules))
-                     (js-compiled js--treesit-font-lock-settings))
-                (append js-compiled root-compiled)))
+                     (js-compiled (if (fboundp 'js--treesit-font-lock-settings)
+                                      (js--treesit-font-lock-settings)
+                                    js--treesit-font-lock-settings)))
+                     (append js-compiled root-compiled)))
 
   (treesit-major-mode-setup))
 
